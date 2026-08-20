@@ -1,0 +1,20 @@
+#EXTM3U x-tvg-url="https://raw.githubusercontent.com/username/epg/main/epg.xml.gz"
+
+#EXTINF:-1 tvg-id="dd_national" tvg-name="DD National" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/8/81/Doordarshan_logo.svg" group-title="National",DD National
+#EXTVLCOPT:http-user-agent=Mozilla/5.0
+#EXTHTTP:{"User-Agent":"Mozilla/5.0"}
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+
+#EXTINF:-1 tvg-id="live_news" tvg-name="Live News Feed" tvg-logo="https://placehold.co/200x200/png?text=News" group-title="News",Live News Feed
+#EXTVLCOPT:http-user-agent=Mozilla/5.0
+#EXTHTTP:{"User-Agent":"Mozilla/5.0"}
+https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_4x3/bipbop_4x3_variant.m3u8
+
+#EXTINF:-1 tvg-id="sports_hd" tvg-name="ClearKey DRM Stream Example" tvg-logo="https://placehold.co/200x200/png?text=Sports" group-title="Sports",ClearKey DRM Stream Example
+#EXTVLCOPT:http-user-agent=Mozilla/5.0
+#EXTHTTP:{"User-Agent":"Mozilla/5.0"}
+#KODIPROP:inputstream.adaptive.manifest_type=mpd
+#KODIPROP:inputstream.adaptive.license_type=clearkey
+#KODIPROP:inputstream.adaptive.license_key=10000000100010001000100000000001:000102030405060708090a0b0c0d0e0f
+https://dash.akamaized.net/dash264/TestCases/1c/qualcomm/1/MultiRate.mpd
+
