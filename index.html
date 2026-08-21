@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Zio Channel Filter Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --accent: #58a6ff;
+      --danger: #f85149;
+      --success: #238636;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+    }
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+    h1 { font-size: 20px; color: #fff; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 16px 0;
+      align-items: center;
+    }
+    input[type="text"], input[type="password"], select {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+    }
+    .btn {
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+      border: 1px solid transparent;
+      transition: 0.2s;
+    }
+    .btn-save { background: var(--success); color: #fff; }
+    .btn-action { background: var(--card); border-color: var(--border); color: #fff; }
+    .btn:hover { opacity: 0.85; }
+    .stats { font-size: 13px; color: #8b949e; margin-bottom: 12px; }
+    .stats span { color: var(--accent); font-weight: bold; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+    }
+    .channel-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .channel-card.blocked {
+      background: rgba(248, 81, 73, 0.12);
+      border-color: var(--danger);
+    }
+    .channel-card input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--danger);
+    }
+    .logo-container {
+      width: 44px;
+      height: 44px;
+      background: #000;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .logo-container img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+    .details { overflow: hidden; flex-grow: 1; }
+    .channel-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .channel-card.blocked .channel-name {
+      text-decoration: line-through;
+      color: var(--danger);
+    }
+    .channel-group { font-size: 11px; color: #8b949e; margin-top: 2px; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>📺 Channel Manager</h1>
+    <div>
+      <input type="password" id="patToken" placeholder="Paste GitHub PAT (ghp_...)" style="width: 220px;" />
+      <button class="btn btn-save" onclick="saveToGitHub()">💾 Save & Sync</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <input type="text" id="searchInput" placeholder="Search channels..." oninput="renderChannels()" style="width: 200px;" />
+    <select id="categoryFilter" onchange="renderChannels()">
+      <option value="ALL">All Categories</option>
+    </select>
+    <button class="btn btn-action" onclick="blockCurrentCategory()">Block Category</button>
+    <button class="btn btn-action" onclick="unblockAll()">Unblock All</button>
+  </div>
+
+  <div class="stats">
+    Total: <span id="totalCount">0</span> |
+    Visible: <span id="visibleCount">0</span> |
+    Blocked: <span id="blockedCount" style="color: var(--danger);">0</span>
+  </div>
+
+  <div id="channelGrid" class="grid">
+    <div style="grid-column: 1/-1; text-align: center; color: #8b949e; padding: 40px;">
+      Loading playlist and existing blocked filters...
+    </div>
+  </div>
+
+  <script>
+    const REPO_OWNER = "falcondoc";
+    const REPO_NAME = "ziooo";
+    const PLAYLIST_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/Zio.m3u`;
+    const BLOCKED_JSON_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/blocked.json`;
+
+    let channels = [];
+    let blockedChannels = new Set();
+    let blockedFileSha = "";
+
+    // Load saved PAT from browser storage if exists
+    document.getElementById("patToken").value = localStorage.getItem("GH_PAT_SAVED") || "";
+
+    async function init() {
+      try {
+        // 1. Fetch current blocked.json
+        const blockedRes = await fetch(BLOCKED_JSON_URL + "?t=" + Date.now());
+        if (blockedRes.ok) {
+          const list = await blockedRes.json();
+          list.forEach(name => blockedChannels.add(name));
+        }
+
+        // 2. Fetch Playlist
+        const m3uRes = await fetch(PLAYLIST_URL + "?t=" + Date.now());
+        const m3uText = await m3uRes.text();
+        parseM3U(m3uText);
+      } catch (err) {
+        alert("Initialization error: " + err.message);
+      }
+    }
+
+    function parseM3U(content) {
+      channels = [];
+      const lines = content.split(/\r?\n/);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.startsWith("#EXTINF")) {
+          const name = line.includes(",") ? line.substring(line.lastIndexOf(",") + 1).trim() : "Unknown";
+          const logoMatch = line.match(/tvg-logo="([^"]+)"/i);
+          const groupMatch = line.match(/group-title="([^"]+)"/i);
+
+          channels.push({
+            name: name,
+            logo: logoMatch ? logoMatch[1] : "",
+            group: groupMatch ? groupMatch[1] : "General"
+          });
+        }
+      }
+      populateCategories();
+      renderChannels();
+    }
+
+    function populateCategories() {
+      const categorySelect = document.getElementById("categoryFilter");
+      const groups = [...new Set(channels.map(c => c.group))].sort();
+      categorySelect.innerHTML = '<option value="ALL">All Categories</option>';
+      groups.forEach(g => {
+        const opt = document.createElement("option");
+        opt.value = g;
+        opt.textContent = g;
+        categorySelect.appendChild(opt);
+      });
+    }
+
+    function toggleChannel(name) {
+      if (blockedChannels.has(name)) {
+        blockedChannels.delete(name);
+      } else {
+        blockedChannels.add(name);
+      }
+      renderChannels();
+    }
+
+    function blockCurrentCategory() {
+      const selected = document.getElementById("categoryFilter").value;
+      if (selected === "ALL") return alert("Select a specific category first.");
+      channels.forEach(ch => {
+        if (ch.group === selected) blockedChannels.add(ch.name);
+      });
+      renderChannels();
+    }
+
+    function unblockAll() {
+      blockedChannels.clear();
+      renderChannels();
+    }
+
+    function renderChannels() {
+      const grid = document.getElementById("channelGrid");
+      const search = document.getElementById("searchInput").value.toLowerCase();
+      const cat = document.getElementById("categoryFilter").value;
+
+      grid.innerHTML = "";
+      let visible = 0;
+
+      channels.forEach(ch => {
+        if (ch.name.toLowerCase().includes(search) && (cat === "ALL" || ch.group === cat)) {
+          visible++;
+          const isBlocked = blockedChannels.has(ch.name);
+          const card = document.createElement("div");
+          card.className = `channel-card ${isBlocked ? "blocked" : ""}`;
+          card.onclick = (e) => {
+            if (e.target.tagName !== "INPUT") toggleChannel(ch.name);
+          };
+
+          card.innerHTML = `
+            <input type="checkbox" ${isBlocked ? "checked" : ""} onchange="toggleChannel('${ch.name.replace(/'/g, "\\'")}')" />
+            <div class="logo-container">
+              ${ch.logo ? `<img src="${ch.logo}" alt="${ch.name}" onerror="this.src='https://via.placeholder.com/44/161b22/8b949e?text=TV'" />` : `<span style="font-size:9px;">No Logo</span>`}
+            </div>
+            <div class="details">
+              <div class="channel-name" title="${ch.name}">${ch.name}</div>
+              <div class="channel-group">${ch.group}</div>
+            </div>
+          `;
+          grid.appendChild(card);
+        }
+      });
+
+      document.getElementById("totalCount").innerText = channels.length;
+      document.getElementById("visibleCount").innerText = visible;
+      document.getElementById("blockedCount").innerText = blockedChannels.size;
+    }
+
+    async function saveToGitHub() {
+      const pat = document.getElementById("patToken").value.trim();
+      if (!pat) return alert("Please paste your GitHub PAT token.");
+
+      localStorage.setItem("GH_PAT_SAVED", pat);
+
+      const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/blocked.json`;
+      const blockedArray = Array.from(blockedChannels);
+      const jsonContent = JSON.stringify(blockedArray, null, 2);
+      const base64Content = btoa(unescape(encodeURIComponent(jsonContent)));
+
+      try {
+        // Get existing file SHA
+        const fileRes = await fetch(apiUrl, {
+          headers: { "Authorization": `Bearer ${pat}` }
+        });
+        
+        let sha = "";
+        if (fileRes.ok) {
+          const fileData = await fileRes.json();
+          sha = fileData.sha;
+        }
+
+        // Commit update
+        const updateRes = await fetch(apiUrl, {
+          method: "PUT",
+          headers: {
+            "Authorization": `Bearer ${pat}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            message: `Update blocked channels list (${blockedArray.length} blocked)`,
+            content: base64Content,
+            sha: sha || undefined
+          })
+        });
+
+        if (updateRes.ok) {
+          alert("✓ Successfully saved to GitHub! GitHub Action is now updating your playlist.");
+        } else {
+          const err = await updateRes.json();
+          alert("Failed to commit: " + (err.message || JSON.stringify(err)));
+        }
+      } catch (err) {
+        alert("Network error: " + err.message);
+      }
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
