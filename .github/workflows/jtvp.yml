@@ -2,9 +2,8 @@ name: Auto Update JTVP Playlist
 
 on:
   schedule:
-    # Automatically runs every 3 hours
     - cron: '0 */3 * * *'
-  workflow_dispatch: # Allows manual trigger button in GitHub UI
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -20,13 +19,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Fetch and Verify Playlist
+      - name: Fetch, Clean, and Verify Playlist
         env:
           JTVP_API_ENDPOINT: ${{ secrets.JTVP_API_ENDPOINT }}
         run: |
           echo "[+] Downloading playlist from endpoint..."
           
-          HTTP_STATUS=$(curl -o Zio.m3u -w "%{http_code}" \
+          HTTP_STATUS=$(curl -o temp_raw.m3u -w "%{http_code}" \
             --max-time 60 \
             --retry 3 \
             --retry-delay 5 \
@@ -39,13 +38,20 @@ jobs:
 
           echo "Response HTTP Status: $HTTP_STATUS"
 
-          # Ensure the downloaded file is a valid M3U
-          if [ "$HTTP_STATUS" -eq 200 ] && grep -q "#EXTM3U" Zio.m3u; then
-            echo "[✓] Valid M3U file downloaded successfully."
-          else
+          # Verify valid download
+          if [ "$HTTP_STATUS" -ne 200 ] || ! grep -q "#EXTM3U" temp_raw.m3u; then
             echo "[-] Error: Failed to fetch valid playlist."
             exit 1
           fi
+
+          echo "[+] Removing unwanted watermarks and comments..."
+          # Filter out specific unwanted words and author tags
+          grep -v -E "𝗟ɪᴛᴛʟᴇ 𝗖ᴏᴅʀ|ZioSt|Fu£ked" temp_raw.m3u > Zio.m3u
+          
+          # Clean up temporary file
+          rm -f temp_raw.m3u
+
+          echo "[✓] Cleaned Zio.m3u successfully."
 
       - name: Commit and Push Updated Playlist
         run: |
@@ -57,6 +63,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No updates detected in playlist. Skipping commit."
           else
-            git commit -m "Auto-refresh Zio.m3u playlist [skip ci]"
+            git commit -m "Auto-clean and update Zio.m3u [skip ci]"
             git push origin main
           fi
