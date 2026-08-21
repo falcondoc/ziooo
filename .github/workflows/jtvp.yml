@@ -2,11 +2,17 @@ name: Auto Update JTVP Playlist
 
 on:
   schedule:
+    # Runs automatically every 3 hours
     - cron: '0 */3 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual trigger from GitHub UI
   push:
     branches:
       - main
+    paths:
+      # Auto-triggers immediately when you save from your web UI
+      - 'blocked.json'
+      - '.github/workflows/jtvp.yml'
+      - 'filter_playlist.py'
 
 permissions:
   contents: write
@@ -19,12 +25,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Fetch, Clean, and Verify Playlist
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Download Raw Playlist
         env:
           JTVP_API_ENDPOINT: ${{ secrets.JTVP_API_ENDPOINT }}
         run: |
-          echo "[+] Downloading playlist from endpoint..."
-          
+          echo "[+] Downloading source playlist..."
           HTTP_STATUS=$(curl -o temp_raw.m3u -w "%{http_code}" \
             --max-time 60 \
             --retry 3 \
@@ -38,20 +48,16 @@ jobs:
 
           echo "Response HTTP Status: $HTTP_STATUS"
 
-          # Verify valid download
           if [ "$HTTP_STATUS" -ne 200 ] || ! grep -q "#EXTM3U" temp_raw.m3u; then
-            echo "[-] Error: Failed to fetch valid playlist."
+            echo "[-] Error: Failed to fetch valid playlist from endpoint."
             exit 1
           fi
 
-          echo "[+] Removing unwanted watermarks and comments..."
-          # Filter out specific unwanted words and author tags
-          grep -v -E "𝗟ɪᴛᴛʟᴇ 𝗖ᴏᴅʀ|ZioSt|Fu£ked" temp_raw.m3u > Zio.m3u
-          
-          # Clean up temporary file
+      - name: Filter & Clean Playlist
+        run: |
+          echo "[+] Running filter_playlist.py with blocked.json..."
+          python filter_playlist.py
           rm -f temp_raw.m3u
-
-          echo "[✓] Cleaned Zio.m3u successfully."
 
       - name: Commit and Push Updated Playlist
         run: |
@@ -61,8 +67,9 @@ jobs:
           git add Zio.m3u
           
           if git diff --staged --quiet; then
-            echo "No updates detected in playlist. Skipping commit."
+            echo "[i] No changes detected in playlist. Skipping commit."
           else
-            git commit -m "Auto-clean and update Zio.m3u [skip ci]"
+            git commit -m "Auto-filter and update Zio.m3u [skip ci]"
             git push origin main
+            echo "[✓] Successfully updated Zio.m3u."
           fi
