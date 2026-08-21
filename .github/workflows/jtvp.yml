@@ -1,0 +1,62 @@
+name: Auto Update JTVP Playlist
+
+on:
+  schedule:
+    # Automatically runs every 3 hours
+    - cron: '0 */3 * * *'
+  workflow_dispatch: # Allows manual trigger button in GitHub UI
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  update-playlist:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Fetch and Verify Playlist
+        env:
+          JTVP_API_ENDPOINT: ${{ secrets.JTVP_API_ENDPOINT }}
+        run: |
+          echo "[+] Downloading playlist from endpoint..."
+          
+          HTTP_STATUS=$(curl -o Zio.m3u -w "%{http_code}" \
+            --max-time 60 \
+            --retry 3 \
+            --retry-delay 5 \
+            --silent \
+            --show-error \
+            --location \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+            -H "Accept: */*" \
+            "$JTVP_API_ENDPOINT")
+
+          echo "Response HTTP Status: $HTTP_STATUS"
+
+          # Ensure the downloaded file is a valid M3U
+          if [ "$HTTP_STATUS" -eq 200 ] && grep -q "#EXTM3U" Zio.m3u; then
+            echo "[✓] Valid M3U file downloaded successfully."
+          else
+            echo "[-] Error: Failed to fetch valid playlist."
+            exit 1
+          fi
+
+      - name: Commit and Push Updated Playlist
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add Zio.m3u
+          
+          if git diff --staged --quiet; then
+            echo "No updates detected in playlist. Skipping commit."
+          else
+            git commit -m "Auto-refresh Zio.m3u playlist [skip ci]"
+            git push origin main
+          fi
